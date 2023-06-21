@@ -49,7 +49,7 @@ def get_cloud(lat: float, lon: float):
 
 @task
 def save_weather(temp: float, rain: float, vis: float, cloud: float):
-    with open("weather.csv", "w+") as w:
+    with open("C:\\Users\\s24822\\Code\\Prefect\\weather.csv", "w+") as w:
         writer = csv.writer(w)
         writer.writerow([temp, rain, vis, cloud])
     return "Successfully wrote temp"
