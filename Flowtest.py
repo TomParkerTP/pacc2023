@@ -37,10 +37,21 @@ def get_visibility(lat: float, lon: float):
     return visibility_status
 
 @task
-def save_weather(temp: float, rain: float, vis: float):
+def get_cloud(lat: float, lon: float):
+    base_url = "https://api.open-meteo.com/v1/forecast/"
+    weather = httpx.get(
+        base_url,
+        params=dict(latitude=lat, longitude=lon, hourly="cloudcover"),
+    )
+    cloud_status = float(weather.json()["hourly"]["cloudcover"][0])
+    print(f"Cloud status: {cloud_status}")
+    return cloud_status
+
+@task
+def save_weather(temp: float, rain: float, vis: float, cloud: float):
     with open("weather.csv", "w+") as w:
         writer = csv.writer(w)
-        writer.writerow([temp, rain, vis])
+        writer.writerow([temp, rain, vis, cloud])
     return "Successfully wrote temp"
 
 @flow(retries=3)
@@ -51,7 +62,8 @@ def fetch_weather_metrics(lat: float, lon: float):
     temp = get_temperature(lat, lon)
     rain = get_rain(lat, lon)
     vis = get_visibility(lat, lon)
-    result = save_weather(temp, rain, vis)
+    cloud = get_cloud(lat, lon)
+    result = save_weather(temp, rain, vis, cloud)
     return result
     
 if __name__ == "__main__":
