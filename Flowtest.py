@@ -1,69 +1,65 @@
 import httpx
 import csv
 from prefect import flow, task
+from datetime import datetime, timedelta
+
+WEATHER_MEASURES = "temperature_2m,rain,relativehumidity_2m,cloudcover"
 
 @task
-def get_temperature(lat: float, lon: float):
+def fetch_hourly_weather(lat: float, lon: float):
+    """Query the open-meteo API for the forecast"""
     base_url = "https://api.open-meteo.com/v1/forecast/"
     weather = httpx.get(
         base_url,
-        params=dict(latitude=lat, longitude=lon, hourly="temperature_2m"),
+        params=dict(latitude=lat, longitude=lon, hourly=WEATHER_MEASURES,),
     )
-
-    most_recent_temp = float(weather.json()["hourly"]["temperature_2m"][0])
-    print(f"Most recent temp C: {most_recent_temp} degrees")
-    return most_recent_temp
+    return weather.json()["hourly"]
 
 @task
-def get_rain(lat: float, lon: float):
-    base_url = "https://api.open-meteo.com/v1/forecast/"
-    weather = httpx.get(
-        base_url,
-        params=dict(latitude=lat, longitude=lon, hourly="rain"),
-    )
-    rain_status = float(weather.json()["hourly"]["rain"][0])
-    print(f"Rain status: {rain_status}")
-    return rain_status
+def save_weather(weather: dict):
+    """Save the weather data to a csv file"""
+    # csv headers
+    contents = f"time,{WEATHER_MEASURES}\n"
+    # csv contents
+    try:
+        for i in range(len(weather["time"])):
+            contents += weather["time"][i]
+            for measure in WEATHER_MEASURES.split(","):
+                contents += "," + str(weather[measure][i])
 
+            contents += "\n"
+        with open("C:\\Users\\s24822\\Code\\Prefect\\weather.csv", "w+") as w:
+            w.write(contents)
+        return "Successfully wrote csv"
+    except Exception as e:
+        return f"Failed to write csv: {e}"
+    
 @task
-def get_visibility(lat: float, lon: float):
-    base_url = "https://api.open-meteo.com/v1/forecast/"
-    weather = httpx.get(
-        base_url,
-        params=dict(latitude=lat, longitude=lon, hourly="visibility"),
-    )
-    visibility_status = float(weather.json()["hourly"]["visibility"][0])
-    print(f"Visibility status: {visibility_status}")
-    return visibility_status
+def log_result(weather: str, lat: float, lon: float):
+    """Create a markdown file with the results of the next hour forecast"""
+    log = f"# Weather in {lat}, {lon}\n\nThe forecast for the next hour as of {datetime.now()} is...\n\n"
+    # Find the next hour
+    try:
+        next_hour = weather["time"].index(
+            (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:00")
+        )
+    except ValueError:
+        # Default to the first hour
+        next_hour = 0
+    # Log the results
+    for measure in WEATHER_MEASURES.split(","):
+        log += f"- {measure}: {weather[measure][next_hour]}\n"
 
-@task
-def get_cloud(lat: float, lon: float):
-    base_url = "https://api.open-meteo.com/v1/forecast/"
-    weather = httpx.get(
-        base_url,
-        params=dict(latitude=lat, longitude=lon, hourly="cloudcover"),
-    )
-    cloud_status = float(weather.json()["hourly"]["cloudcover"][0])
-    print(f"Cloud status: {cloud_status}")
-    return cloud_status
+    # Save the data
+    with open("most_recent_results.md", "w") as f:
+        f.write(log)
 
-@task
-def save_weather(temp: float, rain: float, vis: float, cloud: float):
-    with open("C:\\Users\\s24822\\Code\\Prefect\\weather.csv", "w+") as w:
-        writer = csv.writer(w)
-        writer.writerow([temp, rain, vis, cloud])
-    return "Successfully wrote temp"
-
-@flow(retries=3)
+@flow(retries=0)
 def fetch_weather_metrics(lat: float, lon: float):
-    get_temperature(lat=lat, lon=lon)
-    get_rain(lat=lat, lon=lon)
-    get_visibility(lat=lat, lon=lon)
-    temp = get_temperature(lat, lon)
-    rain = get_rain(lat, lon)
-    vis = get_visibility(lat, lon)
-    cloud = get_cloud(lat, lon)
-    result = save_weather(temp, rain, vis, cloud)
+    """Main pipeline"""
+    weather = fetch_hourly_weather(lat, lon)
+    result = save_weather(weather)
+    log_result(weather, lat, lon)
     return result
     
 if __name__ == "__main__":
